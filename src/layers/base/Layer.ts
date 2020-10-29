@@ -105,16 +105,19 @@ export abstract class Layer {
   }
 
   get data(): any {
-    return this._data;
+    return this.getData();
   }
 
   set data(data: any) {
-    this._data = data;
-    this.onUpdate({ data });
+    this.setData(data);
   }
 
   get isVisible(): boolean {
     return this._visible;
+  }
+
+  getData(): any {
+    return this._data;
   }
 
   setData(data: any): void {
@@ -167,6 +170,10 @@ export abstract class Layer {
   }
 
   onRescale(event: OnRescaleEvent): void {
+    this.optionsRescale(event);
+  }
+
+  optionsRescale(event: OnRescaleEvent): void {
     if (this._options.onRescale) {
       this._options.onRescale(event, this);
     }

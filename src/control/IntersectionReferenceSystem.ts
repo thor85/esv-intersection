@@ -1,7 +1,7 @@
 import Vector2 from '@equinor/videx-vector2';
 import { clamp, radians } from '@equinor/videx-math';
 import { CurveInterpolator, normalize } from 'curve-interpolator';
-import { Interpolator, Trajectory, ReferenceSystemOptions } from '../interfaces';
+import { Interpolator, Trajectory, ReferenceSystemOptions, MDPoint } from '../interfaces';
 
 // determines how curvy the curve is
 const TENSION = 0.75;
@@ -41,13 +41,14 @@ export class IntersectionReferenceSystem {
 
   endVector: number[];
 
-  _curtainPathCache: { point: number[]; md: number }[];
+  _curtainPathCache: MDPoint[];
 
   /**
    * Creates a common reference system that layers and other components can use
    * @param path (required) array of 3d coordinates: [x, y, z]
    * @param options (optional)
    * @param options.trajectoryAngle (optional) - trajectory angle in degrees, overrides the calculated value
+   * @param options.calculateDisplacementFromBottom - (optional) specify if the path is passed from bottom up
    */
   constructor(path: number[][], options?: ReferenceSystemOptions) {
     if (path.length < 1) {
@@ -67,7 +68,7 @@ export class IntersectionReferenceSystem {
 
   private setPath(path: number[][], options: ReferenceSystemOptions = {}): void {
     this.options = options;
-    const { trajectoryAngle } = this.options;
+    const { calculateDisplacementFromBottom } = this.options;
 
     this.path = path;
 
@@ -85,14 +86,16 @@ export class IntersectionReferenceSystem {
       curtain: new CurveInterpolator(this.projectedPath, { tension: TENSION, arcDivisions: ARC_DIVISIONS }),
     };
 
-    if (isFinite(trajectoryAngle)) {
-      const angleInRad = radians(trajectoryAngle);
-      const dirVector = new Vector2(Math.cos(angleInRad), Math.sin(angleInRad)).toArray();
-      this.endVector = dirVector;
+    const trajVector = this.getTrajectoryVector();
+    const negativeTrajVector = trajVector.map((d: number) => d * -1);
+
+    if (calculateDisplacementFromBottom) {
+      this.endVector = negativeTrajVector;
+      this.startVector = trajVector;
     } else {
-      this.endVector = IntersectionReferenceSystem.getDirectionVector(this.interpolators.trajectory, 1 - THRESHOLD_DIRECTION_DISTANCE, 1);
+      this.endVector = trajVector;
+      this.startVector = negativeTrajVector;
     }
-    this.startVector = this.endVector.map((d: number) => d * -1);
 
     this._curtainPathCache = undefined;
   }
@@ -102,7 +105,11 @@ export class IntersectionReferenceSystem {
    */
   project(length: number): number[] {
     const { curtain } = this.interpolators;
-    const l = (length - this._offset) / this.length;
+    const { calculateDisplacementFromBottom } = this.options;
+
+    const normalizedLength = (length - this._offset) / this.length;
+    const l = calculateDisplacementFromBottom ? 1 - normalizedLength : normalizedLength;
+
     const t = clamp(l, 0, 1);
     const p = curtain.getPointAt(t);
     return p;
@@ -126,7 +133,7 @@ export class IntersectionReferenceSystem {
    * @param start in MD
    * @param end in MD
    */
-  getCurtainPath(start: number, end: number): { point: number[]; md: number }[] {
+  getCurtainPath(start: number, end: number): MDPoint[] {
     if (!this._curtainPathCache) {
       const points = [];
       let prevAngle = Math.PI * 2; // Always add first point
@@ -150,13 +157,17 @@ export class IntersectionReferenceSystem {
    * Map a displacement back to length along the curve
    */
   unproject(displacement: number): number {
-    if (displacement < 0) {
-      return displacement;
+    const { calculateDisplacementFromBottom } = this.options;
+    const displacementFromStart = calculateDisplacementFromBottom ? this.displacement - displacement : displacement;
+
+    if (displacementFromStart < 0) {
+      return displacementFromStart;
     }
-    if (displacement > this.displacement) {
-      return this.length + (displacement - this.displacement);
+    if (displacementFromStart > this.displacement) {
+      return this.length + (displacementFromStart - this.displacement);
     }
-    const ls = this.interpolators.curtain.lookupPositions(displacement, 0, 1);
+
+    const ls = this.interpolators.curtain.lookupPositions(displacementFromStart, 0, 1);
     if (ls && ls.length) {
       return ls[0] * this.length + this._offset;
     }
@@ -288,6 +299,21 @@ export class IntersectionReferenceSystem {
     return { points, offset };
   }
 
+  getTrajectoryVector(): number[] {
+    const { trajectoryAngle, calculateDisplacementFromBottom } = this.options;
+
+    if (isFinite(trajectoryAngle)) {
+      const angleInRad = radians(trajectoryAngle);
+      return new Vector2(Math.cos(angleInRad), Math.sin(angleInRad)).toArray();
+    }
+
+    if (calculateDisplacementFromBottom) {
+      return IntersectionReferenceSystem.getDirectionVector(this.interpolators.trajectory, 0 + THRESHOLD_DIRECTION_DISTANCE, 0);
+    }
+
+    return IntersectionReferenceSystem.getDirectionVector(this.interpolators.trajectory, 1 - THRESHOLD_DIRECTION_DISTANCE, 1);
+  }
+
   /**
    * Perform a curtain projection on a set of points in 3D
    * @param points
@@ -318,7 +344,7 @@ export class IntersectionReferenceSystem {
     const p1 = interp.getPointAt(to);
     const p2 = interp.getPointAt(from);
 
-    return normalize([p1[0] - p2[0], p1[1] - p2[1]]);
+    return normalize([p1[0] - p2[0], p1[1] - p2[1]]) as number[];
   }
 
   get length(): number {

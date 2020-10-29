@@ -1,14 +1,13 @@
 import { Point, Texture } from 'pixi.js';
 import { WellboreBaseComponentLayer } from './WellboreBaseComponentLayer';
-import { CementLayerOptions, OnUpdateEvent, OnRescaleEvent, Cement, Casing, HoleSize } from '../interfaces';
+import { CementLayerOptions, OnUpdateEvent, OnRescaleEvent, Cement, Casing, HoleSize, MDPoint } from '../interfaces';
 import {
   calculateCementDiameter,
   cementDiameterChangeDepths,
-  findCasing,
   findIntersectingItems,
   makeTubularPolygon,
 } from '../datautils/wellboreItemShapeGenerator';
-import { offsetPoints } from '../utils/vectorUtils';
+import { createNormals, offsetPoints } from '../utils/vectorUtils';
 
 interface CementShape {
   rightPolygon: Point[];
@@ -17,7 +16,6 @@ interface CementShape {
 }
 
 export class CementLayer extends WellboreBaseComponentLayer {
-  options: CementLayerOptions;
   constructor(id?: string, options?: CementLayerOptions) {
     super(id, options);
     this.options = {
@@ -40,7 +38,7 @@ export class CementLayer extends WellboreBaseComponentLayer {
   }
 
   render(event: OnRescaleEvent | OnUpdateEvent): void {
-    if (this.data == null) {
+    if (this.data == null || !this.rescaleEvent) {
       return;
     }
 
@@ -56,30 +54,40 @@ export class CementLayer extends WellboreBaseComponentLayer {
   }
 
   createCementShape = (cement: Cement, casings: Casing[], holes: HoleSize[]): CementShape => {
-    const attachedCasing = findCasing(cement.casingId, casings);
-    const bottomOfCement = attachedCasing.end;
+    // Merge deprecated casingId and casingIds array
+    const casingIds = [cement.casingId, ...(cement.casingIds || [])].filter((id) => id);
 
-    const { outerCasings, holes: overlappingHoles } = findIntersectingItems(cement, attachedCasing, casings, holes);
+    const attachedCasings = casingIds.map((casingId) => casings.find((casing) => casing.casingId === casingId));
+    if (attachedCasings.length === 0 || attachedCasings.includes(undefined)) {
+      throw new Error('Invalid cement data, cement is missing attached casing');
+    }
 
-    const innerDiameterInterval = {
-      start: attachedCasing.start,
-      end: attachedCasing.end,
-    };
+    attachedCasings.sort((a: Casing, b: Casing) => a.end - b.end); // ascending
+    const bottomOfCement = attachedCasings[attachedCasings.length - 1].end;
+
+    const { outerCasings, holes: overlappingHoles } = findIntersectingItems(cement, bottomOfCement, attachedCasings, casings, holes);
+
+    const innerDiameterIntervals = attachedCasings;
 
     const outerDiameterIntervals = [...outerCasings, ...overlappingHoles].map((d) => ({
       start: d.start,
       end: d.end,
     }));
 
-    const changeDepths = cementDiameterChangeDepths(cement, bottomOfCement, [innerDiameterInterval, ...outerDiameterIntervals]);
+    const changeDepths = cementDiameterChangeDepths(cement, bottomOfCement, [...innerDiameterIntervals, ...outerDiameterIntervals]);
 
-    const diameterAtChangeDepths = changeDepths.map(calculateCementDiameter(attachedCasing, outerCasings, overlappingHoles));
+    const diameterAtChangeDepths = changeDepths.map(calculateCementDiameter(attachedCasings, outerCasings, overlappingHoles));
 
-    const path = this.getPathWithNormals(
+    const path = this.getZFactorScaledPathForPoints(
       cement.toc,
       bottomOfCement,
       diameterAtChangeDepths.map((d) => d.md),
     );
+    const normals = createNormals(path.map((p) => p.point));
+    const pathWithNormals: MDPoint[] = path.map((p, i) => ({
+      ...p,
+      normal: normals[i],
+    }));
 
     const side1Left: Point[] = [];
     const side1Right: Point[] = [];
@@ -88,7 +96,7 @@ export class CementLayer extends WellboreBaseComponentLayer {
 
     let previousDepth = diameterAtChangeDepths.shift();
     for (const depth of diameterAtChangeDepths) {
-      const intervalMdPoints = path.filter((x) => x.md >= previousDepth.md && x.md <= depth.md);
+      const intervalMdPoints = pathWithNormals.filter((x) => x.md >= previousDepth.md && x.md <= depth.md);
 
       const intervalPoints = intervalMdPoints.map((s) => s.point);
       const intervalPointNormals = intervalMdPoints.map((s) => s.normal);
@@ -106,7 +114,7 @@ export class CementLayer extends WellboreBaseComponentLayer {
       previousDepth = depth;
     }
 
-    const pathPoints = path.map((s) => s.point);
+    const pathPoints = pathWithNormals.map((p) => new Point(p.point[0], p.point[1]));
     const leftPolygon = makeTubularPolygon(side1Left, side1Right);
     const rightPolygon = makeTubularPolygon(side2Left, side2Right);
 
@@ -119,18 +127,21 @@ export class CementLayer extends WellboreBaseComponentLayer {
       return this._textureCache[cacheKey];
     }
 
+    const { firstColor, secondColor } = this.options as CementLayerOptions;
+
     const canvas = document.createElement('canvas');
     canvas.width = 150;
     canvas.height = 150;
     const canvasCtx = canvas.getContext('2d');
 
-    canvasCtx.fillStyle = this.options.firstColor;
+    canvasCtx.fillStyle = firstColor;
     canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
 
     canvasCtx.lineWidth = 1;
-    canvasCtx.fillStyle = this.options.secondColor;
+    canvasCtx.fillStyle = secondColor;
 
     canvasCtx.beginPath();
+    canvasCtx.lineWidth = 1;
 
     const distanceBetweenLines = 10;
     for (let i = -canvas.width; i < canvas.width; i++) {

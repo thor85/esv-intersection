@@ -83,6 +83,7 @@ export interface CementLayerOptions extends WellComponentBaseOptions {
 }
 
 export interface WellComponentBaseOptions extends LayerOptions {
+  solidColor?: string;
   firstColor?: string;
   secondColor?: string;
   lineColor?: number;
@@ -93,12 +94,6 @@ export interface WellComponentBaseOptions extends LayerOptions {
   maxFontSize?: number;
   textColor?: string;
   font?: string;
-}
-
-export interface GeoModelData {
-  name: string;
-  color: number;
-  data: [number[]];
 }
 
 export interface ZoomAndPanOptions {
@@ -137,11 +132,16 @@ export interface Casing {
 }
 export interface Cement {
   toc: number;
-  casingId: string; // TODO find the actual ID
+  casingIds?: string[];
+  /**
+   * Should remove optional on casingIds when casingId is removed in next major release
+   * @‌deprecated use casingIds
+   */
+  casingId?: string;
 }
 
 export interface MDPoint {
-  point: Point;
+  point: number[];
   normal?: Vector2;
   md: number; // Currently calculated MD
 }
@@ -173,6 +173,7 @@ export interface Trajectory {
 
 export interface ReferenceSystemOptions {
   trajectoryAngle?: number;
+  calculateDisplacementFromBottom?: boolean;
 }
 
 export type BoundingBox = {
