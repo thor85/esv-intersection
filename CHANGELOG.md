@@ -2,6 +2,17 @@
 
 ## New changes not yet released
 
+## v1.6.0
+
+- Update major version of d3 to v3
+  Breaking changes in d3. Check d3 changelog before updating in your application.
+- Perf: Minor optimization, avoid a few spread in loops and don't call updatePaths() twice when setting data
+
+## v1.5.2
+
+- Fix bug in IntersectionReferenceSystem::project for calculateDisplacementFromBottom
+- Fix simple demo in readme
+
 ## v1.5.1
 
 - Update node to v.16
