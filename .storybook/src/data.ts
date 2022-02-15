@@ -42,5 +42,12 @@ export const getPicks = (): Promise<any[]> => {
   return Promise.resolve(picks);
 }
 
+export async function getImage(url) {
+  let response = await  fetch(url);
+  let data = await response.blob();
+  let image = await createImageBitmap(data);
+  return image
+}
+
 // Nothing for mock
 export const fetchData = async (fileName: string) => {};

@@ -178,6 +178,8 @@ export class IntersectionReferenceSystem {
 
     const ls = this.interpolators.curtain.lookupPositions(displacementFromStart, 0, 1);
     if (ls && ls.length) {
+      // console.log(this)
+      // console.log(ls)
       return ls[0] * length + this._offset;
     }
     return null;

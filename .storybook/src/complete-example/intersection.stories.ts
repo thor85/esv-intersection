@@ -23,11 +23,12 @@ import {
   transformFormationData,
   getPicksData,
 } from '../../../src/datautils';
+// import gridCsandzoneImage from '../esv-intersection-data-troll/31_2-E-4_AY1H.png';
 
 //Data
 import { seismicColorMap } from '../exampledata';
 
-import { getCompletion, getSeismic, getSurfaces, getWellborePath, getStratColumns, getHolesize, getCasings, getCement, getPicks } from '../data';
+import { getCompletion, getSeismic, getSurfaces, getWellborePath, getStratColumns, getHolesize, getCasings, getCement, getPicks, getImage } from '../data';
 
 export const intersection = () => {
   const xBounds: [number, number] = [0, 1000];
@@ -74,9 +75,11 @@ const renderIntersection = (scaleOptions: any) => {
     getHolesize(),
     getCement(),
     getPicks(),
+    getImage('/31_2-E-4_AY1H.png'),
   ];
   Promise.all(promises).then((values) => {
-    const [path, completion, seismic, surfaces, stratColumns, casings, holesizes, cement, picks] = values;
+    // console.log(values)
+    const [path, completion, seismic, surfaces, stratColumns, casings, holesizes, cement, picks, gridImage] = values;
     const referenceSystem = new IntersectionReferenceSystem(path);
     referenceSystem.offset = path[0][2]; // Offset should be md at start of path
     const displacement = referenceSystem.displacement || 1;
@@ -138,9 +141,34 @@ const renderIntersection = (scaleOptions: any) => {
       height: seismicInfo.maxTvdMsl - seismicInfo.minTvdMsl,
     };
 
-    generateSeismicSliceImage(seismic as any, trajectory, seismicColorMap).then((seismicImage: ImageBitmap) => {
-      seismicLayer.setData({ image: seismicImage, options: seismicOptions });
-    });
+    const gridOptions = {
+      x: 0,
+      y: 0,
+      width: 4577,
+      height: 4500,
+    };
+
+    // console.log(seismicOptions)
+
+    // generateSeismicSliceImage(seismic as any, trajectory, seismicColorMap).then((seismicImage: ImageBitmap) => {
+    //   console.log(seismicImage)
+    //   seismicLayer.setData({ image: seismicImage, options: seismicOptions });
+    // });
+
+
+    // const gridCsandzoneImage = require('../esv-intersection-data-troll/31_2-E-4_AY1H.png');
+
+    // fetch("/31_2-E-4_AY1H.png")
+    // .then(function(response) {
+    //   return response.blob()
+    // })
+    // .then(function(gridCsandzoneImage) {
+    //   const image = await createImageBitmap(gridCsandzoneImage);
+    //   console.log(image)
+    //   seismicLayer.setData({ image: image, options: gridOptions });
+    // });
+    // console.log(createImageBitmap(gridCsandzoneImage))
+    seismicLayer.setData({ image: gridImage, options: gridOptions });
 
     controller.adjustToSize(width, height);
     controller.setViewport(1000, 1500, 5000);
@@ -245,13 +273,20 @@ const renderIntersection = (scaleOptions: any) => {
 function addMDOverlay(instance: any) {
   const elm = instance.overlay.create('md', {
     onMouseMove: (event: any) => {
-      const { target, caller, x } = event;
+      // console.log(event)
+      const { target, caller, x, y } = event;
 
       const newX = caller.currentStateAsEvent.xScale.invert(x);
       const { referenceSystem } = caller;
 
       const md = referenceSystem.unproject(newX);
-      target.textContent = Number.isFinite(md) ? `MD: ${md.toFixed(1)}` : '-';
+      // const projectedLength = referenceSystem.getProjectedLength(md);
+      // const position = referenceSystem.getPosition(md)
+      // console.log(projectedLength)
+      // console.log(position)
+      const tvd = referenceSystem.project(md)[1];
+
+      target.textContent = Number.isFinite(md) ? `MD: ${md.toFixed(1)}\r\nTVD: ${tvd.toFixed(1)}` : '-';
       if (md < 0 || referenceSystem.length < md) {
         target.style.visibility = 'hidden';
       } else {
@@ -271,8 +306,10 @@ function addMDOverlay(instance: any) {
   elm.style.backgroundColor = 'rgba(0,0,0,0.5)';
   elm.style.color = 'white';
   elm.style.right = '5px';
-  elm.style.bottom = '5px';
+  elm.style.top = '5px';
   elm.style.zIndex = '100';
+  elm.style.whiteSpace = 'pre';
+  // elm.style.width = '90px';
 }
 
 /**
